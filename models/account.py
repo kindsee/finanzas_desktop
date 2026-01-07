@@ -8,6 +8,7 @@ class Account(db.Base):
     id = Column(Integer, primary_key=True)
     nombre = Column(String(50), nullable=False)
     saldo_inicial = Column(Numeric(12,2), nullable=False)
+    visible = Column(Integer, default=1)  # 1=visible, 0=oculta en UI
 
     # Relaciones
     ajustes = relationship("Adjustment", back_populates="cuenta", cascade="all, delete-orphan")

@@ -490,10 +490,10 @@ class AdminWindow(QDialog):
     def on_new_account(self):
         dlg = AccountDialog(self)
         if dlg.exec() == QDialog.Accepted:
-            nombre, saldo = dlg.get_values()
+            nombre, saldo, visible = dlg.get_values()
             session = db.session()
             try:
-                nueva = Account(nombre=nombre, saldo_inicial=saldo)
+                nueva = Account(nombre=nombre, saldo_inicial=saldo, visible=visible)
                 session.add(nueva)
                 session.commit()
                 QMessageBox.information(self, "OK", "Cuenta creada")
@@ -512,11 +512,13 @@ class AdminWindow(QDialog):
             if not acc:
                 QMessageBox.warning(self, "No encontrado", "Cuenta no encontrada")
                 return
-            dlg = AccountDialog(self, acc.nombre, float(acc.saldo_inicial))
+            visible_actual = getattr(acc, 'visible', 1)
+            dlg = AccountDialog(self, acc.nombre, float(acc.saldo_inicial), visible_actual)
             if dlg.exec() == QDialog.Accepted:
-                nombre, saldo = dlg.get_values()
+                nombre, saldo, visible = dlg.get_values()
                 acc.nombre = nombre
                 acc.saldo_inicial = saldo
+                acc.visible = visible
                 session.commit()
                 QMessageBox.information(self, "OK", "Cuenta actualizada")
         except Exception as e:
@@ -1423,7 +1425,7 @@ class AdminWindow(QDialog):
     
 
 class AccountDialog(QDialog):
-    def __init__(self, parent=None, nombre="", saldo=0.0):
+    def __init__(self, parent=None, nombre="", saldo=0.0, visible=1):
         super().__init__(parent)
         self.setWindowTitle("Cuenta")
         self.setModal(True)
@@ -1436,6 +1438,12 @@ class AccountDialog(QDialog):
         self.input_saldo.setDecimals(2)
         form.addRow("Nombre:", self.input_nombre)
         form.addRow("Saldo inicial:", self.input_saldo)
+        
+        # Checkbox para cuenta activa/visible
+        self.check_visible = QCheckBox("Cuenta activa (visible en UI)")
+        self.check_visible.setChecked(bool(visible))
+        form.addRow("", self.check_visible)
+        
         layout.addLayout(form)
         botones = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         botones.accepted.connect(self.accept)
@@ -1443,7 +1451,9 @@ class AccountDialog(QDialog):
         layout.addWidget(botones)
 
     def get_values(self):
-        return self.input_nombre.text().strip(), float(self.input_saldo.value())
+        return (self.input_nombre.text().strip(), 
+                float(self.input_saldo.value()),
+                1 if self.check_visible.isChecked() else 0)
 
 
 class TransactionDialog(QDialog):

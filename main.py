@@ -63,7 +63,7 @@ from dateutil.relativedelta import relativedelta
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel,
     QCalendarWidget, QSizePolicy, QScrollArea, QFrame, QDialog, QTableWidget,
-    QTableWidgetItem, QFileDialog, QMessageBox,QComboBox
+    QTableWidgetItem, QFileDialog, QMessageBox, QComboBox, QCheckBox
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -80,6 +80,7 @@ from models.fixed_expense import FixedExpense
 
 from ui.admin_ui import AdminWindow
 from ui.dashboard_widget import DashboardWidget
+from ui.simulation_window import SimulationWindow
 
 import os
 from dotenv import load_dotenv, set_key, dotenv_values
@@ -428,15 +429,16 @@ class MainWindow(QWidget):
         right_v.setSpacing(8)
         right_v.setAlignment(Qt.AlignVCenter)
 
-        # Botones (6) + Auditoría
+        # Botones (7) + Auditoría + Simulación
         self.btn_config = QPushButton("⚙️ Config")
         self.btn_admin = QPushButton("✎ Admin")
         self.btn_cons = QPushButton("📊 Consolidación")
         self.btn_dash = QPushButton("🖥 Dashboard")
         self.btn_import = QPushButton("🔁 Importar")
         self.btn_audit = QPushButton("🔍 Auditoría")  # abre diálogo de auditoría
+        self.btn_simulation = QPushButton("🎯 Simulación")  # abre ventana de simulación
 
-        for b in (self.btn_config, self.btn_admin, self.btn_cons, self.btn_dash, self.btn_import, self.btn_audit):
+        for b in (self.btn_config, self.btn_admin, self.btn_cons, self.btn_dash, self.btn_import, self.btn_audit, self.btn_simulation):
             b.setFixedWidth(190)
             b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             right_v.addWidget(b)
@@ -446,6 +448,7 @@ class MainWindow(QWidget):
 
         # Conectar auditoría
         self.btn_audit.clicked.connect(self.on_audit_clicked)
+        self.btn_simulation.clicked.connect(self.on_simulation_clicked)
         self.btn_admin.clicked.connect(self.open_admin)
         # Conectar con Dashboard
         self.btn_dash.clicked.connect(self.open_dashboard)
@@ -455,6 +458,31 @@ class MainWindow(QWidget):
         self.btn_config.clicked.connect(self.on_config_clicked)
          #conectar importar
         self.btn_import.clicked.connect(self.on_import_clicked)
+        
+        # Inicializar diccionarios para cuentas ANTES de cargar los botones
+        self.account_widgets = {}  # {cuenta_id: widget}
+        self.account_checkboxes = {}  # {cuenta_id: checkbox}
+        self.filter_mode = False
+        
+        # --- Controles de visualización de cuentas ---
+        accounts_controls_layout = QHBoxLayout()
+        accounts_controls_layout.setContentsMargins(12, 4, 12, 4)
+        
+        # Botón de ojo para mostrar/ocultar cuentas inactivas
+        self.btn_toggle_filter = QPushButton("👁 Gestionar Visibilidad")
+        self.btn_toggle_filter.setCheckable(True)
+        self.btn_toggle_filter.setChecked(False)
+        self.btn_toggle_filter.clicked.connect(self.toggle_account_filter)
+        accounts_controls_layout.addWidget(self.btn_toggle_filter)
+        
+        # Botón mostrar todas las cuentas en un gráfico
+        self.btn_show_all = QPushButton("📊 Mostrar Todas las Cuentas")
+        self.btn_show_all.clicked.connect(self.show_all_accounts_graph)
+        accounts_controls_layout.addWidget(self.btn_show_all)
+        
+        accounts_controls_layout.addStretch()
+        main_layout.addLayout(accounts_controls_layout)
+        
         # --- Línea de cuentas (centradas) ---
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -486,6 +514,10 @@ class MainWindow(QWidget):
             w = it.widget()
             if w:
                 w.deleteLater()
+        
+        # Limpiar diccionarios
+        self.account_widgets.clear()
+        self.account_checkboxes.clear()
 
         from database import db as _db
 
@@ -540,7 +572,12 @@ class MainWindow(QWidget):
         # Abrimos UNA sesión y consultamos cuentas
         session = _db.session()
         try:
-            cuentas = session.query(Account).order_by(Account.id).all()
+            # Si NO estamos en modo filtro, mostrar solo las visibles (activas)
+            if not self.filter_mode:
+                cuentas = session.query(Account).filter_by(visible=1).order_by(Account.id).all()
+            else:
+                # En modo filtro, mostrar TODAS las cuentas (incluidas inactivas)
+                cuentas = session.query(Account).order_by(Account.id).all()
         except Exception as e:
             print("Error cargando cuentas:", e)
             try:
@@ -563,6 +600,23 @@ class MainWindow(QWidget):
 
         # Recorremos las cuentas y calculamos saldo usando la MISMA sesión.
         for c in cuentas:
+            # Contenedor principal con checkbox y widget de cuenta
+            main_container = QWidget()
+            main_vbox = QVBoxLayout(main_container)
+            main_vbox.setContentsMargins(2, 2, 2, 2)
+            main_vbox.setSpacing(2)
+            
+            # Checkbox para mostrar/ocultar
+            checkbox = QCheckBox()
+            # Cargar estado guardado de visibilidad (default 1=visible)
+            is_visible = getattr(c, "visible", 1)
+            checkbox.setChecked(bool(is_visible))
+            checkbox.stateChanged.connect(lambda state, cuenta_id=c.id: self.on_account_checkbox_changed(cuenta_id, state))
+            checkbox.setVisible(False)  # Oculto por defecto hasta activar filtro
+            self.account_checkboxes[c.id] = checkbox
+            main_vbox.addWidget(checkbox, alignment=Qt.AlignCenter)
+            
+            # Widget de la cuenta
             widget = QFrame()
             widget.setFrameShape(QFrame.StyledPanel)
             widget.setFixedSize(160, 80)
@@ -599,7 +653,10 @@ class MainWindow(QWidget):
 
             # captura cid correctamente para evitar cierre sobre la variable de bucle
             widget.mousePressEvent = lambda ev, _cid=c.id: self.on_account_click(_cid)
-            layout.addWidget(widget)
+            
+            main_vbox.addWidget(widget)
+            self.account_widgets[c.id] = main_container
+            layout.addWidget(main_container)
 
         try:
             session.close()
@@ -637,6 +694,17 @@ class MainWindow(QWidget):
         y = [s if s is not None else float('nan') for s in saldos]
 
         ax.plot(x, y, marker='o', linestyle='-')
+        
+        # Sombrear área futura (desde hoy en adelante) en azul
+        fecha_hoy = date.today()
+        if x:  # Verificar que hay datos
+            # Encontrar índice donde empieza el futuro
+            futuro_indices = [i for i, fecha in enumerate(x) if fecha >= fecha_hoy]
+            if futuro_indices:
+                idx_futuro = futuro_indices[0]
+                if idx_futuro < len(x):
+                    # Sombrear desde el punto futuro hasta el final
+                    ax.axvspan(x[idx_futuro], x[-1], alpha=0.2, color='blue', label='Proyección')
 
         # Formato del eje X para fechas y rotación - usar formato configurado
         ax.xaxis.set_major_formatter(mdates.DateFormatter(get_matplotlib_date_format()))
@@ -688,6 +756,108 @@ class MainWindow(QWidget):
             self.dibujar_grafico_cuenta(target_id)
         else:
             QMessageBox.information(self, "Info", "No hay cuentas para graficar.")
+    
+    def toggle_account_filter(self):
+        """Activar/desactivar el modo de gestión de visibilidad"""
+        self.filter_mode = self.btn_toggle_filter.isChecked()
+        
+        # Recargar cuentas según el modo
+        # Si activamos filtro: muestra TODAS (incluidas inactivas)
+        # Si desactivamos: muestra solo activas (visible=1)
+        self.load_accounts_buttons(self.accounts_layout)
+        
+        # Mostrar/ocultar checkboxes según el modo
+        for checkbox in self.account_checkboxes.values():
+            checkbox.setVisible(self.filter_mode)
+    
+    def on_account_checkbox_changed(self, cuenta_id, state):
+        """Manejar cambios en los checkboxes de cuentas y guardar estado en BD"""
+        is_checked = (state == Qt.Checked.value)
+        
+        # Guardar estado en base de datos
+        session = db.session()
+        try:
+            cuenta = session.query(Account).filter_by(id=cuenta_id).first()
+            if cuenta:
+                cuenta.visible = 1 if is_checked else 0
+                session.commit()
+        except Exception as e:
+            session.rollback()
+            print(f"Error guardando visibilidad de cuenta {cuenta_id}: {e}")
+        finally:
+            session.close()
+        
+        # Actualizar visibilidad en UI si el modo filtro está activo
+        if self.filter_mode and cuenta_id in self.account_widgets:
+            self.account_widgets[cuenta_id].setVisible(is_checked)
+    
+    def show_all_accounts_graph(self):
+        """Mostrar un gráfico con todas las cuentas activas juntas"""
+        session = db.session()
+        try:
+            # Obtener todas las cuentas
+            cuentas = session.query(Account).order_by(Account.nombre).all()
+            
+            if not cuentas:
+                QMessageBox.information(self, "Info", "No hay cuentas para graficar.")
+                return
+            
+            # Filtrar por cuentas visibles si el modo filtro está activo
+            if self.filter_mode:
+                cuentas = [c for c in cuentas if self.account_checkboxes.get(c.id, None) and 
+                          self.account_checkboxes[c.id].isChecked()]
+            
+            if not cuentas:
+                QMessageBox.information(self, "Info", "No hay cuentas visibles para graficar.")
+                return
+            
+            fecha_obj = self.calendar.selectedDate().toPython() if hasattr(self.calendar, "selectedDate") else date.today()
+            
+            # Limpiar figura
+            self.figure.clear()
+            ax = self.figure.add_subplot(111)
+            
+            # Variable para almacenar el rango de fechas para el sombreado
+            all_fechas = []
+            
+            # Obtener serie de saldos para cada cuenta y graficar
+            for cuenta in cuentas:
+                try:
+                    fechas, saldos = obtener_serie_saldos(session, cuenta, fecha_obj)
+                    x = [f for f in fechas]
+                    y = [s if s is not None else float('nan') for s in saldos]
+                    ax.plot(x, y, marker='o', linestyle='-', label=cuenta.nombre, markersize=4)
+                    all_fechas.extend(x)
+                except Exception as e:
+                    print(f"Error graficando cuenta {cuenta.nombre}: {e}")
+            
+            # Sombrear área futura (desde hoy en adelante) en azul
+            if all_fechas:
+                fecha_hoy = date.today()
+                all_fechas_sorted = sorted(set(all_fechas))
+                futuro_indices = [i for i, fecha in enumerate(all_fechas_sorted) if fecha >= fecha_hoy]
+                if futuro_indices and len(all_fechas_sorted) > 1:
+                    idx_futuro = futuro_indices[0]
+                    if idx_futuro < len(all_fechas_sorted):
+                        ax.axvspan(all_fechas_sorted[idx_futuro], all_fechas_sorted[-1], 
+                                 alpha=0.2, color='blue', label='Proyección')
+            
+            # Formato del eje X
+            ax.xaxis.set_major_formatter(mdates.DateFormatter(get_matplotlib_date_format()))
+            self.figure.autofmt_xdate(rotation=30)
+            
+            ax.set_title("Todas las Cuentas")
+            ax.set_xlabel("Fecha")
+            ax.set_ylabel("Saldo (€)")
+            ax.grid(True)
+            ax.legend(loc='best', fontsize=8)
+            
+            self.canvas.draw()
+            
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Error al generar el gráfico: {e}")
+        finally:
+            session.close()
 
     # ---------------------------
     # Auditoría: abre diálogo con detalle acumulado y posibilidad de exportar CSV
@@ -756,6 +926,21 @@ class MainWindow(QWidget):
 
         dlg = AuditDialog(self, report)
         dlg.exec()
+    
+    # ---------------------------
+    # Simulación: abre ventana de simulación de saldos
+    # ---------------------------
+    def on_simulation_clicked(self):
+        session = db.session()
+        try:
+            dlg = SimulationWindow(session, parent=self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo abrir la ventana de simulación: {e}")
+            print("DEBUG simulation error:", e)
+        finally:
+            session.close()
+    
     #Definición para la consolidación
     def on_consolidation_clicked(self):
         if not self.selected_account_id:
