@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Numeric, ForeignKey
+from sqlalchemy import Column, Integer, String, Numeric, ForeignKey, Date
 from sqlalchemy.orm import relationship
 from database import Base
+from datetime import date
 
 class SimulationVariable(Base):
     __tablename__ = 'simulation_variables'
@@ -10,6 +11,7 @@ class SimulationVariable(Base):
     cuenta_id = Column(Integer, ForeignKey('account.id'), nullable=False)
     importe = Column(Numeric(15, 2), nullable=False)
     frecuencia = Column(String(50), nullable=False)  # semanal, mensual, trimestral, semestral, anual
+    fecha_inicio = Column(Date, nullable=True)  # fecha de inicio de la variable
     activo = Column(Integer, default=1)  # 0=inactivo, 1=activo
     
     # Relationship

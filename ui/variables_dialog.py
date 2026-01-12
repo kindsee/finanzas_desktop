@@ -1,10 +1,11 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QPushButton,
                                QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
                                QFormLayout, QLineEdit, QComboBox, QDoubleSpinBox, QCheckBox,
-                               QDialogButtonBox)
-from PySide6.QtCore import Qt
+                               QDialogButtonBox, QDateEdit)
+from PySide6.QtCore import Qt, QDate
 from models.simulation_variable import SimulationVariable
 from models.account import Account
+from datetime import date
 
 
 class VariableEditDialog(QDialog):
@@ -47,6 +48,12 @@ class VariableEditDialog(QDialog):
         self.frecuencia_combo.addItems(['semanal', 'mensual', 'trimestral', 'semestral', 'anual'])
         layout.addRow("Frecuencia:", self.frecuencia_combo)
         
+        # Fecha de inicio
+        self.fecha_inicio_input = QDateEdit()
+        self.fecha_inicio_input.setCalendarPopup(True)
+        self.fecha_inicio_input.setDate(QDate.currentDate())
+        layout.addRow("Fecha Inicio:", self.fecha_inicio_input)
+        
         # Activo
         self.activo_check = QCheckBox("Variable activa")
         self.activo_check.setChecked(True)
@@ -75,6 +82,12 @@ class VariableEditDialog(QDialog):
         if index >= 0:
             self.frecuencia_combo.setCurrentIndex(index)
         
+        # Cargar fecha de inicio
+        if self.variable.fecha_inicio:
+            self.fecha_inicio_input.setDate(QDate(self.variable.fecha_inicio.year, 
+                                                   self.variable.fecha_inicio.month, 
+                                                   self.variable.fecha_inicio.day))
+        
         self.activo_check.setChecked(bool(self.variable.activo))
     
     def get_data(self):
@@ -84,6 +97,7 @@ class VariableEditDialog(QDialog):
             'cuenta_id': self.cuenta_combo.currentData(),
             'importe': self.importe_input.value(),
             'frecuencia': self.frecuencia_combo.currentText(),
+            'fecha_inicio': self.fecha_inicio_input.date().toPython(),
             'activo': 1 if self.activo_check.isChecked() else 0
         }
 
@@ -105,8 +119,8 @@ class VariablesDialog(QDialog):
         
         # Tabla de variables
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(['ID', 'Descripción', 'Cuenta', 'Importe', 'Frecuencia', 'Activo'])
+        self.table.setColumnCount(7)
+        self.table.setHorizontalHeaderLabels(['ID', 'Descripción', 'Cuenta', 'Importe', 'Frecuencia', 'Fecha Inicio', 'Activo'])
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.setSelectionBehavior(QTableWidget.SelectRows)
         self.table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -147,7 +161,9 @@ class VariablesDialog(QDialog):
                 self.table.setItem(row, 2, QTableWidgetItem(var.cuenta.nombre if var.cuenta else ''))
                 self.table.setItem(row, 3, QTableWidgetItem(f"{float(var.importe):.2f}"))
                 self.table.setItem(row, 4, QTableWidgetItem(var.frecuencia))
-                self.table.setItem(row, 5, QTableWidgetItem('Sí' if var.activo else 'No'))
+                fecha_str = var.fecha_inicio.strftime('%d/%m/%Y') if var.fecha_inicio else 'No definida'
+                self.table.setItem(row, 5, QTableWidgetItem(fecha_str))
+                self.table.setItem(row, 6, QTableWidgetItem('Sí' if var.activo else 'No'))
                 
         except Exception as e:
             QMessageBox.warning(self, "Error", f"Error al cargar variables: {e}")

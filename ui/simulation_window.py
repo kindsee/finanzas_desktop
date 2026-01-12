@@ -270,8 +270,17 @@ class SimulationWindow(QDialog):
             if variable.cuenta_id not in efectos_variables:
                 continue
             
-            # Calcular todas las fechas donde aplica esta variable
-            fecha_var = fecha_inicio
+            # Si la variable tiene fecha de inicio, empezar desde esa fecha
+            # Si no, empezar desde fecha_inicio de la simulación
+            fecha_var = variable.fecha_inicio if variable.fecha_inicio else fecha_inicio
+            
+            # Si la fecha de inicio de la variable es posterior al rango, saltarla
+            if fecha_var > fecha_fin:
+                continue
+            
+            # Si la fecha de inicio es anterior al rango de simulación, empezar desde fecha_inicio
+            fecha_var = max(fecha_var, fecha_inicio)
+            
             while fecha_var <= fecha_fin:
                 if fecha_var not in efectos_variables[variable.cuenta_id]:
                     efectos_variables[variable.cuenta_id][fecha_var] = Decimal('0')

@@ -81,6 +81,7 @@ from models.fixed_expense import FixedExpense
 from ui.admin_ui import AdminWindow
 from ui.dashboard_widget import DashboardWidget
 from ui.simulation_window import SimulationWindow
+from ui.account_simulation_window import AccountSimulationWindow
 
 import os
 from dotenv import load_dotenv, set_key, dotenv_values
@@ -429,7 +430,7 @@ class MainWindow(QWidget):
         right_v.setSpacing(8)
         right_v.setAlignment(Qt.AlignVCenter)
 
-        # Botones (7) + Auditoría + Simulación
+        # Botones (7) + Auditoría + Simulación + Simular cuenta
         self.btn_config = QPushButton("⚙️ Config")
         self.btn_admin = QPushButton("✎ Admin")
         self.btn_cons = QPushButton("📊 Consolidación")
@@ -437,8 +438,9 @@ class MainWindow(QWidget):
         self.btn_import = QPushButton("🔁 Importar")
         self.btn_audit = QPushButton("🔍 Auditoría")  # abre diálogo de auditoría
         self.btn_simulation = QPushButton("🎯 Simulación")  # abre ventana de simulación
+        self.btn_account_simulation = QPushButton("💳 Simular cuenta")  # abre ventana de simulación detallada de cuenta
 
-        for b in (self.btn_config, self.btn_admin, self.btn_cons, self.btn_dash, self.btn_import, self.btn_audit, self.btn_simulation):
+        for b in (self.btn_config, self.btn_admin, self.btn_cons, self.btn_dash, self.btn_import, self.btn_audit, self.btn_simulation, self.btn_account_simulation):
             b.setFixedWidth(190)
             b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             right_v.addWidget(b)
@@ -449,6 +451,7 @@ class MainWindow(QWidget):
         # Conectar auditoría
         self.btn_audit.clicked.connect(self.on_audit_clicked)
         self.btn_simulation.clicked.connect(self.on_simulation_clicked)
+        self.btn_account_simulation.clicked.connect(self.on_account_simulation_clicked)
         self.btn_admin.clicked.connect(self.open_admin)
         # Conectar con Dashboard
         self.btn_dash.clicked.connect(self.open_dashboard)
@@ -938,6 +941,20 @@ class MainWindow(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo abrir la ventana de simulación: {e}")
             print("DEBUG simulation error:", e)
+        finally:
+            session.close()
+    
+    # ---------------------------
+    # Simulación de cuenta: abre ventana de simulación detallada de movimientos de una cuenta
+    # ---------------------------
+    def on_account_simulation_clicked(self):
+        session = db.session()
+        try:
+            dlg = AccountSimulationWindow(session, parent=self)
+            dlg.exec()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo abrir la ventana de simulación de cuenta: {e}")
+            print("DEBUG account simulation error:", e)
         finally:
             session.close()
     
